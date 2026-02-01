@@ -1668,6 +1668,16 @@ async def get_unread_count(current_user: dict = Depends(get_current_user)):
 # Include router
 app.include_router(api_router)
 
+# Serve uploaded files
+from fastapi.responses import FileResponse
+
+@app.get("/api/uploads/{filename}")
+async def serve_upload(filename: str):
+    filepath = UPLOADS_DIR / filename
+    if not filepath.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+    return FileResponse(filepath)
+
 # CORS
 app.add_middleware(
     CORSMiddleware,
