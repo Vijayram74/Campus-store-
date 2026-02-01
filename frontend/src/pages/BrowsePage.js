@@ -155,12 +155,12 @@ export default function BrowsePage() {
                 ))}
               </SelectContent>
             </Select>
-            <Select value={condition} onValueChange={setCondition}>
+            <Select value={condition || "any"} onValueChange={(val) => setCondition(val === "any" ? "" : val)}>
               <SelectTrigger className="w-[140px]" data-testid="browse-condition-select">
                 <SelectValue placeholder="Condition" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">Any Condition</SelectItem>
+                <SelectItem value="any">Any Condition</SelectItem>
                 {CONDITIONS.map((c) => (
                   <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
                 ))}
