@@ -1,15 +1,19 @@
-from fastapi import FastAPI, APIRouter
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, UploadFile, File, Request
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 import os
 import logging
 from pathlib import Path
-from pydantic import BaseModel, Field, ConfigDict
-from typing import List
+from pydantic import BaseModel, Field, EmailStr
+from typing import List, Optional, Dict
 import uuid
-from datetime import datetime, timezone
-
+import jwt
+import bcrypt
+from datetime import datetime, timezone, timedelta
+from enum import Enum
+import base64
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -19,56 +23,1261 @@ mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
-# Create the main app without a prefix
-app = FastAPI()
+# JWT Configuration
+JWT_SECRET = os.environ.get('JWT_SECRET', 'campus-store-secret-key-2024')
+JWT_ALGORITHM = "HS256"
+JWT_EXPIRATION_HOURS = 24
 
-# Create a router with the /api prefix
+# Stripe Configuration
+STRIPE_API_KEY = os.environ.get('STRIPE_API_KEY', 'sk_test_emergent')
+
+app = FastAPI(title="Campus Store API")
 api_router = APIRouter(prefix="/api")
+security = HTTPBearer()
 
+# ============== ENUMS ==============
+class UserStatus(str, Enum):
+    PENDING = "pending"
+    ACTIVE = "active"
+    SUSPENDED = "suspended"
 
-# Define Models
-class StatusCheck(BaseModel):
-    model_config = ConfigDict(extra="ignore")  # Ignore MongoDB's _id field
-    
+class UserRole(str, Enum):
+    STUDENT = "student"
+    ADMIN = "admin"
+
+class ItemMode(str, Enum):
+    BUY = "buy"
+    BORROW = "borrow"
+    BOTH = "both"
+
+class ItemStatus(str, Enum):
+    AVAILABLE = "available"
+    RENTED = "rented"
+    SOLD = "sold"
+    UNAVAILABLE = "unavailable"
+
+class ItemCondition(str, Enum):
+    NEW = "new"
+    LIKE_NEW = "like_new"
+    GOOD = "good"
+    FAIR = "fair"
+    POOR = "poor"
+
+class OrderStatus(str, Enum):
+    CREATED = "created"
+    PAID = "paid"
+    COMPLETED = "completed"
+    CANCELLED = "cancelled"
+
+class BorrowStatus(str, Enum):
+    REQUESTED = "requested"
+    APPROVED = "approved"
+    ACTIVE = "active"
+    RETURNED = "returned"
+    CLOSED = "closed"
+    REJECTED = "rejected"
+
+class PaymentStatus(str, Enum):
+    PENDING = "pending"
+    PAID = "paid"
+    REFUNDED = "refunded"
+    FAILED = "failed"
+
+# ============== MODELS ==============
+
+# College Models
+class CollegeCreate(BaseModel):
+    name: str
+    domain: str
+    is_active: bool = True
+
+class College(BaseModel):
     id: str = Field(default_factory=lambda: str(uuid.uuid4()))
-    client_name: str
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    name: str
+    domain: str
+    is_active: bool = True
+    created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
-class StatusCheckCreate(BaseModel):
-    client_name: str
+# User Models
+class UserCreate(BaseModel):
+    email: EmailStr
+    password: str
+    name: str
+    phone: Optional[str] = None
+    college_id: str
+    student_id_image: Optional[str] = None
 
-# Add your routes to the router instead of directly to app
-@api_router.get("/")
-async def root():
-    return {"message": "Hello World"}
+class UserLogin(BaseModel):
+    email: EmailStr
+    password: str
 
-@api_router.post("/status", response_model=StatusCheck)
-async def create_status_check(input: StatusCheckCreate):
-    status_dict = input.model_dump()
-    status_obj = StatusCheck(**status_dict)
+class UserResponse(BaseModel):
+    id: str
+    email: str
+    name: str
+    phone: Optional[str] = None
+    college_id: str
+    college_name: Optional[str] = None
+    role: str
+    status: str
+    rating: float = 0.0
+    total_reviews: int = 0
+    created_at: str
+    avatar_url: Optional[str] = None
+
+class UserUpdate(BaseModel):
+    name: Optional[str] = None
+    phone: Optional[str] = None
+    avatar_url: Optional[str] = None
+
+# Item Models
+class ItemCreate(BaseModel):
+    title: str
+    description: str
+    category: str
+    mode: ItemMode
+    price_buy: Optional[float] = None
+    price_borrow: Optional[float] = None
+    deposit: Optional[float] = None
+    condition: ItemCondition
+    images: List[str] = []
+
+class ItemUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    category: Optional[str] = None
+    mode: Optional[ItemMode] = None
+    price_buy: Optional[float] = None
+    price_borrow: Optional[float] = None
+    deposit: Optional[float] = None
+    condition: Optional[ItemCondition] = None
+    status: Optional[ItemStatus] = None
+    images: Optional[List[str]] = None
+
+class ItemResponse(BaseModel):
+    id: str
+    college_id: str
+    owner_id: str
+    owner_name: Optional[str] = None
+    owner_rating: Optional[float] = None
+    title: str
+    description: str
+    category: str
+    mode: str
+    price_buy: Optional[float] = None
+    price_borrow: Optional[float] = None
+    deposit: Optional[float] = None
+    condition: str
+    status: str
+    images: List[str] = []
+    created_at: str
+    updated_at: str
+
+# Order Models (Buy)
+class OrderCreate(BaseModel):
+    item_id: str
+
+class OrderResponse(BaseModel):
+    id: str
+    item_id: str
+    item_title: Optional[str] = None
+    item_image: Optional[str] = None
+    buyer_id: str
+    seller_id: str
+    seller_name: Optional[str] = None
+    amount: float
+    status: str
+    payment_status: str
+    payment_session_id: Optional[str] = None
+    created_at: str
+    completed_at: Optional[str] = None
+
+# Borrow Request Models
+class BorrowRequestCreate(BaseModel):
+    item_id: str
+    start_date: str
+    end_date: str
+
+class BorrowRequestResponse(BaseModel):
+    id: str
+    item_id: str
+    item_title: Optional[str] = None
+    item_image: Optional[str] = None
+    borrower_id: str
+    borrower_name: Optional[str] = None
+    lender_id: str
+    lender_name: Optional[str] = None
+    start_date: str
+    end_date: str
+    days: int
+    rental_amount: float
+    deposit_amount: float
+    total_amount: float
+    status: str
+    payment_status: str
+    payment_session_id: Optional[str] = None
+    created_at: str
+    returned_at: Optional[str] = None
+
+class BorrowApproval(BaseModel):
+    approved: bool
+    rejection_reason: Optional[str] = None
+
+# Review Models
+class ReviewCreate(BaseModel):
+    rating: int = Field(ge=1, le=5)
+    comment: Optional[str] = None
+    order_id: Optional[str] = None
+    borrow_id: Optional[str] = None
+
+class ReviewResponse(BaseModel):
+    id: str
+    reviewer_id: str
+    reviewer_name: str
+    reviewee_id: str
+    rating: int
+    comment: Optional[str] = None
+    created_at: str
+
+# Payment Models
+class PaymentCreate(BaseModel):
+    order_id: Optional[str] = None
+    borrow_id: Optional[str] = None
+    origin_url: str
+
+class PaymentResponse(BaseModel):
+    checkout_url: str
+    session_id: str
+
+class PaymentStatusResponse(BaseModel):
+    status: str
+    payment_status: str
+    amount_total: float
+    currency: str
+
+# ============== AUTH HELPERS ==============
+def hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+def verify_password(password: str, hashed: str) -> bool:
+    return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
+
+def create_token(user_id: str, college_id: str, role: str) -> str:
+    payload = {
+        "user_id": user_id,
+        "college_id": college_id,
+        "role": role,
+        "exp": datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRATION_HOURS)
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    try:
+        token = credentials.credentials
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        user = await db.users.find_one({"id": payload["user_id"]}, {"_id": 0})
+        if not user:
+            raise HTTPException(status_code=401, detail="User not found")
+        if user["status"] != UserStatus.ACTIVE.value:
+            raise HTTPException(status_code=403, detail="Account not active")
+        return user
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expired")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+# ============== COLLEGE ENDPOINTS ==============
+@api_router.get("/colleges", response_model=List[College])
+async def get_colleges():
+    colleges = await db.colleges.find({"is_active": True}, {"_id": 0}).to_list(100)
+    return colleges
+
+@api_router.post("/colleges", response_model=College)
+async def create_college(college: CollegeCreate):
+    college_doc = College(**college.model_dump())
+    await db.colleges.insert_one(college_doc.model_dump())
+    return college_doc
+
+# ============== AUTH ENDPOINTS ==============
+@api_router.post("/auth/signup")
+async def signup(user: UserCreate):
+    # Check if email exists
+    existing = await db.users.find_one({"email": user.email})
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already registered")
     
-    # Convert to dict and serialize datetime to ISO string for MongoDB
-    doc = status_obj.model_dump()
-    doc['timestamp'] = doc['timestamp'].isoformat()
+    # Verify college exists
+    college = await db.colleges.find_one({"id": user.college_id}, {"_id": 0})
+    if not college:
+        raise HTTPException(status_code=400, detail="Invalid college")
     
-    _ = await db.status_checks.insert_one(doc)
-    return status_obj
+    user_id = str(uuid.uuid4())
+    user_doc = {
+        "id": user_id,
+        "email": user.email,
+        "password": hash_password(user.password),
+        "name": user.name,
+        "phone": user.phone,
+        "college_id": user.college_id,
+        "role": UserRole.STUDENT.value,
+        "status": UserStatus.ACTIVE.value,  # Auto-approve for MVP
+        "rating": 0.0,
+        "total_reviews": 0,
+        "avatar_url": f"https://api.dicebear.com/7.x/avataaars/svg?seed={user_id}",
+        "student_id_image": user.student_id_image,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    await db.users.insert_one(user_doc)
+    
+    token = create_token(user_id, user.college_id, UserRole.STUDENT.value)
+    
+    return {
+        "token": token,
+        "user": {
+            "id": user_id,
+            "email": user.email,
+            "name": user.name,
+            "college_id": user.college_id,
+            "college_name": college["name"],
+            "role": UserRole.STUDENT.value,
+            "status": UserStatus.ACTIVE.value,
+            "rating": 0.0,
+            "total_reviews": 0,
+            "avatar_url": user_doc["avatar_url"],
+            "created_at": user_doc["created_at"]
+        }
+    }
 
-@api_router.get("/status", response_model=List[StatusCheck])
-async def get_status_checks():
-    # Exclude MongoDB's _id field from the query results
-    status_checks = await db.status_checks.find({}, {"_id": 0}).to_list(1000)
+@api_router.post("/auth/login")
+async def login(credentials: UserLogin):
+    user = await db.users.find_one({"email": credentials.email}, {"_id": 0})
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid credentials")
     
-    # Convert ISO string timestamps back to datetime objects
-    for check in status_checks:
-        if isinstance(check['timestamp'], str):
-            check['timestamp'] = datetime.fromisoformat(check['timestamp'])
+    if not verify_password(credentials.password, user["password"]):
+        raise HTTPException(status_code=401, detail="Invalid credentials")
     
-    return status_checks
+    if user["status"] != UserStatus.ACTIVE.value:
+        raise HTTPException(status_code=403, detail="Account not active")
+    
+    college = await db.colleges.find_one({"id": user["college_id"]}, {"_id": 0})
+    
+    token = create_token(user["id"], user["college_id"], user["role"])
+    
+    return {
+        "token": token,
+        "user": {
+            "id": user["id"],
+            "email": user["email"],
+            "name": user["name"],
+            "phone": user.get("phone"),
+            "college_id": user["college_id"],
+            "college_name": college["name"] if college else None,
+            "role": user["role"],
+            "status": user["status"],
+            "rating": user.get("rating", 0.0),
+            "total_reviews": user.get("total_reviews", 0),
+            "avatar_url": user.get("avatar_url"),
+            "created_at": user["created_at"]
+        }
+    }
 
-# Include the router in the main app
+@api_router.get("/auth/me", response_model=UserResponse)
+async def get_me(current_user: dict = Depends(get_current_user)):
+    college = await db.colleges.find_one({"id": current_user["college_id"]}, {"_id": 0})
+    return UserResponse(
+        id=current_user["id"],
+        email=current_user["email"],
+        name=current_user["name"],
+        phone=current_user.get("phone"),
+        college_id=current_user["college_id"],
+        college_name=college["name"] if college else None,
+        role=current_user["role"],
+        status=current_user["status"],
+        rating=current_user.get("rating", 0.0),
+        total_reviews=current_user.get("total_reviews", 0),
+        avatar_url=current_user.get("avatar_url"),
+        created_at=current_user["created_at"]
+    )
+
+@api_router.put("/auth/profile", response_model=UserResponse)
+async def update_profile(update: UserUpdate, current_user: dict = Depends(get_current_user)):
+    update_data = {k: v for k, v in update.model_dump().items() if v is not None}
+    if update_data:
+        await db.users.update_one({"id": current_user["id"]}, {"$set": update_data})
+    
+    user = await db.users.find_one({"id": current_user["id"]}, {"_id": 0})
+    college = await db.colleges.find_one({"id": user["college_id"]}, {"_id": 0})
+    
+    return UserResponse(
+        id=user["id"],
+        email=user["email"],
+        name=user["name"],
+        phone=user.get("phone"),
+        college_id=user["college_id"],
+        college_name=college["name"] if college else None,
+        role=user["role"],
+        status=user["status"],
+        rating=user.get("rating", 0.0),
+        total_reviews=user.get("total_reviews", 0),
+        avatar_url=user.get("avatar_url"),
+        created_at=user["created_at"]
+    )
+
+# ============== ITEM ENDPOINTS ==============
+@api_router.post("/items", response_model=ItemResponse)
+async def create_item(item: ItemCreate, current_user: dict = Depends(get_current_user)):
+    item_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    
+    item_doc = {
+        "id": item_id,
+        "college_id": current_user["college_id"],
+        "owner_id": current_user["id"],
+        "title": item.title,
+        "description": item.description,
+        "category": item.category,
+        "mode": item.mode.value,
+        "price_buy": item.price_buy,
+        "price_borrow": item.price_borrow,
+        "deposit": item.deposit,
+        "condition": item.condition.value,
+        "status": ItemStatus.AVAILABLE.value,
+        "images": item.images,
+        "created_at": now,
+        "updated_at": now
+    }
+    
+    await db.items.insert_one(item_doc)
+    
+    return ItemResponse(
+        **{k: v for k, v in item_doc.items()},
+        owner_name=current_user["name"],
+        owner_rating=current_user.get("rating", 0.0)
+    )
+
+@api_router.get("/items", response_model=List[ItemResponse])
+async def get_items(
+    mode: Optional[str] = None,
+    category: Optional[str] = None,
+    search: Optional[str] = None,
+    min_price: Optional[float] = None,
+    max_price: Optional[float] = None,
+    condition: Optional[str] = None,
+    current_user: dict = Depends(get_current_user)
+):
+    # Filter by college (multi-tenancy)
+    query = {
+        "college_id": current_user["college_id"],
+        "status": {"$in": [ItemStatus.AVAILABLE.value, ItemStatus.RENTED.value]}
+    }
+    
+    if mode and mode != "all":
+        if mode == "buy":
+            query["mode"] = {"$in": [ItemMode.BUY.value, ItemMode.BOTH.value]}
+        elif mode == "borrow":
+            query["mode"] = {"$in": [ItemMode.BORROW.value, ItemMode.BOTH.value]}
+    
+    if category and category != "all":
+        query["category"] = category
+    
+    if condition:
+        query["condition"] = condition
+    
+    if search:
+        query["$or"] = [
+            {"title": {"$regex": search, "$options": "i"}},
+            {"description": {"$regex": search, "$options": "i"}}
+        ]
+    
+    items = await db.items.find(query, {"_id": 0}).sort("created_at", -1).to_list(100)
+    
+    # Enrich with owner info
+    result = []
+    for item in items:
+        owner = await db.users.find_one({"id": item["owner_id"]}, {"_id": 0, "name": 1, "rating": 1})
+        result.append(ItemResponse(
+            **item,
+            owner_name=owner["name"] if owner else "Unknown",
+            owner_rating=owner.get("rating", 0.0) if owner else 0.0
+        ))
+    
+    return result
+
+@api_router.get("/items/my", response_model=List[ItemResponse])
+async def get_my_items(current_user: dict = Depends(get_current_user)):
+    items = await db.items.find(
+        {"owner_id": current_user["id"]},
+        {"_id": 0}
+    ).sort("created_at", -1).to_list(100)
+    
+    return [ItemResponse(
+        **item,
+        owner_name=current_user["name"],
+        owner_rating=current_user.get("rating", 0.0)
+    ) for item in items]
+
+@api_router.get("/items/{item_id}", response_model=ItemResponse)
+async def get_item(item_id: str, current_user: dict = Depends(get_current_user)):
+    item = await db.items.find_one({"id": item_id}, {"_id": 0})
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    
+    # Check college access
+    if item["college_id"] != current_user["college_id"]:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    owner = await db.users.find_one({"id": item["owner_id"]}, {"_id": 0, "name": 1, "rating": 1})
+    
+    return ItemResponse(
+        **item,
+        owner_name=owner["name"] if owner else "Unknown",
+        owner_rating=owner.get("rating", 0.0) if owner else 0.0
+    )
+
+@api_router.put("/items/{item_id}", response_model=ItemResponse)
+async def update_item(item_id: str, update: ItemUpdate, current_user: dict = Depends(get_current_user)):
+    item = await db.items.find_one({"id": item_id}, {"_id": 0})
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    
+    if item["owner_id"] != current_user["id"]:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    update_data = {k: v.value if isinstance(v, Enum) else v for k, v in update.model_dump().items() if v is not None}
+    update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+    
+    await db.items.update_one({"id": item_id}, {"$set": update_data})
+    
+    updated_item = await db.items.find_one({"id": item_id}, {"_id": 0})
+    return ItemResponse(
+        **updated_item,
+        owner_name=current_user["name"],
+        owner_rating=current_user.get("rating", 0.0)
+    )
+
+@api_router.delete("/items/{item_id}")
+async def delete_item(item_id: str, current_user: dict = Depends(get_current_user)):
+    item = await db.items.find_one({"id": item_id}, {"_id": 0})
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    
+    if item["owner_id"] != current_user["id"]:
+        raise HTTPException(status_code=403, detail="Not authorized")
+    
+    await db.items.delete_one({"id": item_id})
+    return {"message": "Item deleted"}
+
+# ============== CATEGORIES ==============
+CATEGORIES = [
+    {"id": "textbooks", "name": "Textbooks", "icon": "book"},
+    {"id": "electronics", "name": "Electronics", "icon": "laptop"},
+    {"id": "furniture", "name": "Furniture", "icon": "sofa"},
+    {"id": "clothing", "name": "Clothing", "icon": "shirt"},
+    {"id": "sports", "name": "Sports", "icon": "dumbbell"},
+    {"id": "instruments", "name": "Instruments", "icon": "music"},
+    {"id": "appliances", "name": "Appliances", "icon": "refrigerator"},
+    {"id": "other", "name": "Other", "icon": "package"}
+]
+
+@api_router.get("/categories")
+async def get_categories():
+    return CATEGORIES
+
+# ============== BUY (ORDER) ENDPOINTS ==============
+@api_router.post("/orders", response_model=OrderResponse)
+async def create_order(order: OrderCreate, current_user: dict = Depends(get_current_user)):
+    item = await db.items.find_one({"id": order.item_id}, {"_id": 0})
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    
+    if item["college_id"] != current_user["college_id"]:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    if item["status"] != ItemStatus.AVAILABLE.value:
+        raise HTTPException(status_code=400, detail="Item not available")
+    
+    if item["mode"] not in [ItemMode.BUY.value, ItemMode.BOTH.value]:
+        raise HTTPException(status_code=400, detail="Item not for sale")
+    
+    if item["owner_id"] == current_user["id"]:
+        raise HTTPException(status_code=400, detail="Cannot buy your own item")
+    
+    order_id = str(uuid.uuid4())
+    order_doc = {
+        "id": order_id,
+        "item_id": item["id"],
+        "buyer_id": current_user["id"],
+        "seller_id": item["owner_id"],
+        "college_id": current_user["college_id"],
+        "amount": float(item["price_buy"]),
+        "status": OrderStatus.CREATED.value,
+        "payment_status": PaymentStatus.PENDING.value,
+        "payment_session_id": None,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "completed_at": None
+    }
+    
+    await db.orders.insert_one(order_doc)
+    
+    seller = await db.users.find_one({"id": item["owner_id"]}, {"_id": 0, "name": 1})
+    
+    return OrderResponse(
+        **order_doc,
+        item_title=item["title"],
+        item_image=item["images"][0] if item["images"] else None,
+        seller_name=seller["name"] if seller else "Unknown"
+    )
+
+@api_router.get("/orders", response_model=List[OrderResponse])
+async def get_orders(type: Optional[str] = "bought", current_user: dict = Depends(get_current_user)):
+    if type == "sold":
+        query = {"seller_id": current_user["id"]}
+    else:
+        query = {"buyer_id": current_user["id"]}
+    
+    orders = await db.orders.find(query, {"_id": 0}).sort("created_at", -1).to_list(100)
+    
+    result = []
+    for order in orders:
+        item = await db.items.find_one({"id": order["item_id"]}, {"_id": 0})
+        seller = await db.users.find_one({"id": order["seller_id"]}, {"_id": 0, "name": 1})
+        result.append(OrderResponse(
+            **order,
+            item_title=item["title"] if item else "Unknown",
+            item_image=item["images"][0] if item and item["images"] else None,
+            seller_name=seller["name"] if seller else "Unknown"
+        ))
+    
+    return result
+
+@api_router.get("/orders/{order_id}", response_model=OrderResponse)
+async def get_order(order_id: str, current_user: dict = Depends(get_current_user)):
+    order = await db.orders.find_one({"id": order_id}, {"_id": 0})
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    
+    if order["buyer_id"] != current_user["id"] and order["seller_id"] != current_user["id"]:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    item = await db.items.find_one({"id": order["item_id"]}, {"_id": 0})
+    seller = await db.users.find_one({"id": order["seller_id"]}, {"_id": 0, "name": 1})
+    
+    return OrderResponse(
+        **order,
+        item_title=item["title"] if item else "Unknown",
+        item_image=item["images"][0] if item and item["images"] else None,
+        seller_name=seller["name"] if seller else "Unknown"
+    )
+
+@api_router.post("/orders/{order_id}/complete")
+async def complete_order(order_id: str, current_user: dict = Depends(get_current_user)):
+    order = await db.orders.find_one({"id": order_id}, {"_id": 0})
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    
+    if order["buyer_id"] != current_user["id"]:
+        raise HTTPException(status_code=403, detail="Only buyer can complete")
+    
+    if order["payment_status"] != PaymentStatus.PAID.value:
+        raise HTTPException(status_code=400, detail="Payment not completed")
+    
+    await db.orders.update_one(
+        {"id": order_id},
+        {"$set": {
+            "status": OrderStatus.COMPLETED.value,
+            "completed_at": datetime.now(timezone.utc).isoformat()
+        }}
+    )
+    
+    # Mark item as sold
+    await db.items.update_one(
+        {"id": order["item_id"]},
+        {"$set": {"status": ItemStatus.SOLD.value}}
+    )
+    
+    return {"message": "Order completed"}
+
+# ============== BORROW ENDPOINTS ==============
+@api_router.post("/borrow", response_model=BorrowRequestResponse)
+async def create_borrow_request(request: BorrowRequestCreate, current_user: dict = Depends(get_current_user)):
+    item = await db.items.find_one({"id": request.item_id}, {"_id": 0})
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    
+    if item["college_id"] != current_user["college_id"]:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    if item["status"] != ItemStatus.AVAILABLE.value:
+        raise HTTPException(status_code=400, detail="Item not available")
+    
+    if item["mode"] not in [ItemMode.BORROW.value, ItemMode.BOTH.value]:
+        raise HTTPException(status_code=400, detail="Item not for borrow")
+    
+    if item["owner_id"] == current_user["id"]:
+        raise HTTPException(status_code=400, detail="Cannot borrow your own item")
+    
+    # Calculate rental period and amounts
+    start = datetime.fromisoformat(request.start_date.replace('Z', '+00:00'))
+    end = datetime.fromisoformat(request.end_date.replace('Z', '+00:00'))
+    days = max((end - start).days, 1)
+    
+    rental_amount = float(item["price_borrow"]) * days
+    deposit_amount = float(item["deposit"]) if item["deposit"] else 0.0
+    
+    borrow_id = str(uuid.uuid4())
+    borrow_doc = {
+        "id": borrow_id,
+        "item_id": item["id"],
+        "borrower_id": current_user["id"],
+        "lender_id": item["owner_id"],
+        "college_id": current_user["college_id"],
+        "start_date": request.start_date,
+        "end_date": request.end_date,
+        "days": days,
+        "rental_amount": rental_amount,
+        "deposit_amount": deposit_amount,
+        "total_amount": rental_amount + deposit_amount,
+        "status": BorrowStatus.REQUESTED.value,
+        "payment_status": PaymentStatus.PENDING.value,
+        "payment_session_id": None,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "returned_at": None
+    }
+    
+    await db.borrow_requests.insert_one(borrow_doc)
+    
+    lender = await db.users.find_one({"id": item["owner_id"]}, {"_id": 0, "name": 1})
+    
+    return BorrowRequestResponse(
+        **borrow_doc,
+        item_title=item["title"],
+        item_image=item["images"][0] if item["images"] else None,
+        borrower_name=current_user["name"],
+        lender_name=lender["name"] if lender else "Unknown"
+    )
+
+@api_router.get("/borrow", response_model=List[BorrowRequestResponse])
+async def get_borrow_requests(type: Optional[str] = "borrowed", current_user: dict = Depends(get_current_user)):
+    if type == "lent":
+        query = {"lender_id": current_user["id"]}
+    else:
+        query = {"borrower_id": current_user["id"]}
+    
+    borrows = await db.borrow_requests.find(query, {"_id": 0}).sort("created_at", -1).to_list(100)
+    
+    result = []
+    for borrow in borrows:
+        item = await db.items.find_one({"id": borrow["item_id"]}, {"_id": 0})
+        borrower = await db.users.find_one({"id": borrow["borrower_id"]}, {"_id": 0, "name": 1})
+        lender = await db.users.find_one({"id": borrow["lender_id"]}, {"_id": 0, "name": 1})
+        result.append(BorrowRequestResponse(
+            **borrow,
+            item_title=item["title"] if item else "Unknown",
+            item_image=item["images"][0] if item and item["images"] else None,
+            borrower_name=borrower["name"] if borrower else "Unknown",
+            lender_name=lender["name"] if lender else "Unknown"
+        ))
+    
+    return result
+
+@api_router.get("/borrow/pending", response_model=List[BorrowRequestResponse])
+async def get_pending_requests(current_user: dict = Depends(get_current_user)):
+    """Get pending borrow requests for items owned by current user (lender view)"""
+    borrows = await db.borrow_requests.find(
+        {"lender_id": current_user["id"], "status": BorrowStatus.REQUESTED.value},
+        {"_id": 0}
+    ).sort("created_at", -1).to_list(100)
+    
+    result = []
+    for borrow in borrows:
+        item = await db.items.find_one({"id": borrow["item_id"]}, {"_id": 0})
+        borrower = await db.users.find_one({"id": borrow["borrower_id"]}, {"_id": 0, "name": 1})
+        result.append(BorrowRequestResponse(
+            **borrow,
+            item_title=item["title"] if item else "Unknown",
+            item_image=item["images"][0] if item and item["images"] else None,
+            borrower_name=borrower["name"] if borrower else "Unknown",
+            lender_name=current_user["name"]
+        ))
+    
+    return result
+
+@api_router.get("/borrow/{borrow_id}", response_model=BorrowRequestResponse)
+async def get_borrow_request(borrow_id: str, current_user: dict = Depends(get_current_user)):
+    borrow = await db.borrow_requests.find_one({"id": borrow_id}, {"_id": 0})
+    if not borrow:
+        raise HTTPException(status_code=404, detail="Borrow request not found")
+    
+    if borrow["borrower_id"] != current_user["id"] and borrow["lender_id"] != current_user["id"]:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    item = await db.items.find_one({"id": borrow["item_id"]}, {"_id": 0})
+    borrower = await db.users.find_one({"id": borrow["borrower_id"]}, {"_id": 0, "name": 1})
+    lender = await db.users.find_one({"id": borrow["lender_id"]}, {"_id": 0, "name": 1})
+    
+    return BorrowRequestResponse(
+        **borrow,
+        item_title=item["title"] if item else "Unknown",
+        item_image=item["images"][0] if item and item["images"] else None,
+        borrower_name=borrower["name"] if borrower else "Unknown",
+        lender_name=lender["name"] if lender else "Unknown"
+    )
+
+@api_router.post("/borrow/{borrow_id}/approve")
+async def approve_borrow_request(borrow_id: str, approval: BorrowApproval, current_user: dict = Depends(get_current_user)):
+    borrow = await db.borrow_requests.find_one({"id": borrow_id}, {"_id": 0})
+    if not borrow:
+        raise HTTPException(status_code=404, detail="Borrow request not found")
+    
+    if borrow["lender_id"] != current_user["id"]:
+        raise HTTPException(status_code=403, detail="Only lender can approve")
+    
+    if borrow["status"] != BorrowStatus.REQUESTED.value:
+        raise HTTPException(status_code=400, detail="Request already processed")
+    
+    if approval.approved:
+        await db.borrow_requests.update_one(
+            {"id": borrow_id},
+            {"$set": {"status": BorrowStatus.APPROVED.value}}
+        )
+        return {"message": "Request approved"}
+    else:
+        await db.borrow_requests.update_one(
+            {"id": borrow_id},
+            {"$set": {
+                "status": BorrowStatus.REJECTED.value,
+                "rejection_reason": approval.rejection_reason
+            }}
+        )
+        return {"message": "Request rejected"}
+
+@api_router.post("/borrow/{borrow_id}/return")
+async def return_item(borrow_id: str, current_user: dict = Depends(get_current_user)):
+    borrow = await db.borrow_requests.find_one({"id": borrow_id}, {"_id": 0})
+    if not borrow:
+        raise HTTPException(status_code=404, detail="Borrow request not found")
+    
+    if borrow["borrower_id"] != current_user["id"] and borrow["lender_id"] != current_user["id"]:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    if borrow["status"] != BorrowStatus.ACTIVE.value:
+        raise HTTPException(status_code=400, detail="Rental not active")
+    
+    await db.borrow_requests.update_one(
+        {"id": borrow_id},
+        {"$set": {
+            "status": BorrowStatus.RETURNED.value,
+            "returned_at": datetime.now(timezone.utc).isoformat()
+        }}
+    )
+    
+    # Make item available again
+    await db.items.update_one(
+        {"id": borrow["item_id"]},
+        {"$set": {"status": ItemStatus.AVAILABLE.value}}
+    )
+    
+    return {"message": "Item returned"}
+
+@api_router.post("/borrow/{borrow_id}/confirm-return")
+async def confirm_return(borrow_id: str, current_user: dict = Depends(get_current_user)):
+    """Lender confirms return and deposit is refunded"""
+    borrow = await db.borrow_requests.find_one({"id": borrow_id}, {"_id": 0})
+    if not borrow:
+        raise HTTPException(status_code=404, detail="Borrow request not found")
+    
+    if borrow["lender_id"] != current_user["id"]:
+        raise HTTPException(status_code=403, detail="Only lender can confirm return")
+    
+    if borrow["status"] != BorrowStatus.RETURNED.value:
+        raise HTTPException(status_code=400, detail="Item not returned yet")
+    
+    await db.borrow_requests.update_one(
+        {"id": borrow_id},
+        {"$set": {
+            "status": BorrowStatus.CLOSED.value,
+            "payment_status": PaymentStatus.REFUNDED.value
+        }}
+    )
+    
+    return {"message": "Return confirmed, deposit refunded"}
+
+# ============== PAYMENT ENDPOINTS ==============
+@api_router.post("/payments/checkout", response_model=PaymentResponse)
+async def create_checkout(payment: PaymentCreate, request: Request, current_user: dict = Depends(get_current_user)):
+    from emergentintegrations.payments.stripe.checkout import StripeCheckout, CheckoutSessionRequest
+    
+    origin_url = payment.origin_url
+    
+    if payment.order_id:
+        # Buy payment
+        order = await db.orders.find_one({"id": payment.order_id}, {"_id": 0})
+        if not order:
+            raise HTTPException(status_code=404, detail="Order not found")
+        if order["buyer_id"] != current_user["id"]:
+            raise HTTPException(status_code=403, detail="Access denied")
+        
+        amount = order["amount"]
+        metadata = {
+            "type": "buy",
+            "order_id": payment.order_id,
+            "user_id": current_user["id"]
+        }
+    elif payment.borrow_id:
+        # Borrow payment
+        borrow = await db.borrow_requests.find_one({"id": payment.borrow_id}, {"_id": 0})
+        if not borrow:
+            raise HTTPException(status_code=404, detail="Borrow request not found")
+        if borrow["borrower_id"] != current_user["id"]:
+            raise HTTPException(status_code=403, detail="Access denied")
+        if borrow["status"] != BorrowStatus.APPROVED.value:
+            raise HTTPException(status_code=400, detail="Request not approved")
+        
+        amount = borrow["total_amount"]
+        metadata = {
+            "type": "borrow",
+            "borrow_id": payment.borrow_id,
+            "user_id": current_user["id"]
+        }
+    else:
+        raise HTTPException(status_code=400, detail="Order or borrow ID required")
+    
+    # Create Stripe checkout
+    host_url = str(request.base_url).rstrip('/')
+    webhook_url = f"{host_url}/api/webhook/stripe"
+    
+    stripe_checkout = StripeCheckout(api_key=STRIPE_API_KEY, webhook_url=webhook_url)
+    
+    success_url = f"{origin_url}/payment/success?session_id={{CHECKOUT_SESSION_ID}}"
+    cancel_url = f"{origin_url}/payment/cancel"
+    
+    checkout_request = CheckoutSessionRequest(
+        amount=float(amount),
+        currency="usd",
+        success_url=success_url,
+        cancel_url=cancel_url,
+        metadata=metadata
+    )
+    
+    session = await stripe_checkout.create_checkout_session(checkout_request)
+    
+    # Record payment transaction
+    payment_doc = {
+        "id": str(uuid.uuid4()),
+        "session_id": session.session_id,
+        "user_id": current_user["id"],
+        "order_id": payment.order_id,
+        "borrow_id": payment.borrow_id,
+        "amount": float(amount),
+        "currency": "usd",
+        "payment_status": PaymentStatus.PENDING.value,
+        "metadata": metadata,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    await db.payment_transactions.insert_one(payment_doc)
+    
+    # Update order/borrow with session ID
+    if payment.order_id:
+        await db.orders.update_one(
+            {"id": payment.order_id},
+            {"$set": {"payment_session_id": session.session_id}}
+        )
+    elif payment.borrow_id:
+        await db.borrow_requests.update_one(
+            {"id": payment.borrow_id},
+            {"$set": {"payment_session_id": session.session_id}}
+        )
+    
+    return PaymentResponse(checkout_url=session.url, session_id=session.session_id)
+
+@api_router.get("/payments/status/{session_id}", response_model=PaymentStatusResponse)
+async def get_payment_status(session_id: str, request: Request, current_user: dict = Depends(get_current_user)):
+    from emergentintegrations.payments.stripe.checkout import StripeCheckout
+    
+    host_url = str(request.base_url).rstrip('/')
+    webhook_url = f"{host_url}/api/webhook/stripe"
+    
+    stripe_checkout = StripeCheckout(api_key=STRIPE_API_KEY, webhook_url=webhook_url)
+    status = await stripe_checkout.get_checkout_status(session_id)
+    
+    # Update payment transaction
+    payment = await db.payment_transactions.find_one({"session_id": session_id}, {"_id": 0})
+    
+    if payment and status.payment_status == "paid" and payment["payment_status"] != PaymentStatus.PAID.value:
+        # Update payment status
+        await db.payment_transactions.update_one(
+            {"session_id": session_id},
+            {"$set": {"payment_status": PaymentStatus.PAID.value}}
+        )
+        
+        # Update order or borrow
+        if payment.get("order_id"):
+            await db.orders.update_one(
+                {"id": payment["order_id"]},
+                {"$set": {
+                    "payment_status": PaymentStatus.PAID.value,
+                    "status": OrderStatus.PAID.value
+                }}
+            )
+        elif payment.get("borrow_id"):
+            await db.borrow_requests.update_one(
+                {"id": payment["borrow_id"]},
+                {"$set": {
+                    "payment_status": PaymentStatus.PAID.value,
+                    "status": BorrowStatus.ACTIVE.value
+                }}
+            )
+            # Mark item as rented
+            borrow = await db.borrow_requests.find_one({"id": payment["borrow_id"]}, {"_id": 0})
+            if borrow:
+                await db.items.update_one(
+                    {"id": borrow["item_id"]},
+                    {"$set": {"status": ItemStatus.RENTED.value}}
+                )
+    
+    return PaymentStatusResponse(
+        status=status.status,
+        payment_status=status.payment_status,
+        amount_total=status.amount_total / 100,  # Convert from cents
+        currency=status.currency
+    )
+
+@api_router.post("/webhook/stripe")
+async def stripe_webhook(request: Request):
+    from emergentintegrations.payments.stripe.checkout import StripeCheckout
+    
+    body = await request.body()
+    signature = request.headers.get("Stripe-Signature")
+    
+    host_url = str(request.base_url).rstrip('/')
+    webhook_url = f"{host_url}/api/webhook/stripe"
+    
+    stripe_checkout = StripeCheckout(api_key=STRIPE_API_KEY, webhook_url=webhook_url)
+    
+    try:
+        webhook_response = await stripe_checkout.handle_webhook(body, signature)
+        
+        if webhook_response.payment_status == "paid":
+            session_id = webhook_response.session_id
+            payment = await db.payment_transactions.find_one({"session_id": session_id}, {"_id": 0})
+            
+            if payment and payment["payment_status"] != PaymentStatus.PAID.value:
+                await db.payment_transactions.update_one(
+                    {"session_id": session_id},
+                    {"$set": {"payment_status": PaymentStatus.PAID.value}}
+                )
+                
+                if payment.get("order_id"):
+                    await db.orders.update_one(
+                        {"id": payment["order_id"]},
+                        {"$set": {
+                            "payment_status": PaymentStatus.PAID.value,
+                            "status": OrderStatus.PAID.value
+                        }}
+                    )
+                elif payment.get("borrow_id"):
+                    await db.borrow_requests.update_one(
+                        {"id": payment["borrow_id"]},
+                        {"$set": {
+                            "payment_status": PaymentStatus.PAID.value,
+                            "status": BorrowStatus.ACTIVE.value
+                        }}
+                    )
+        
+        return {"status": "success"}
+    except Exception as e:
+        logger.error(f"Webhook error: {e}")
+        return {"status": "error", "message": str(e)}
+
+# ============== REVIEW ENDPOINTS ==============
+@api_router.post("/reviews", response_model=ReviewResponse)
+async def create_review(review: ReviewCreate, current_user: dict = Depends(get_current_user)):
+    reviewee_id = None
+    
+    if review.order_id:
+        order = await db.orders.find_one({"id": review.order_id}, {"_id": 0})
+        if not order:
+            raise HTTPException(status_code=404, detail="Order not found")
+        if order["buyer_id"] == current_user["id"]:
+            reviewee_id = order["seller_id"]
+        elif order["seller_id"] == current_user["id"]:
+            reviewee_id = order["buyer_id"]
+        else:
+            raise HTTPException(status_code=403, detail="Not part of this order")
+    elif review.borrow_id:
+        borrow = await db.borrow_requests.find_one({"id": review.borrow_id}, {"_id": 0})
+        if not borrow:
+            raise HTTPException(status_code=404, detail="Borrow request not found")
+        if borrow["borrower_id"] == current_user["id"]:
+            reviewee_id = borrow["lender_id"]
+        elif borrow["lender_id"] == current_user["id"]:
+            reviewee_id = borrow["borrower_id"]
+        else:
+            raise HTTPException(status_code=403, detail="Not part of this transaction")
+    else:
+        raise HTTPException(status_code=400, detail="Order or borrow ID required")
+    
+    # Check if already reviewed
+    existing = await db.reviews.find_one({
+        "reviewer_id": current_user["id"],
+        "$or": [
+            {"order_id": review.order_id},
+            {"borrow_id": review.borrow_id}
+        ]
+    })
+    if existing:
+        raise HTTPException(status_code=400, detail="Already reviewed")
+    
+    review_id = str(uuid.uuid4())
+    review_doc = {
+        "id": review_id,
+        "reviewer_id": current_user["id"],
+        "reviewee_id": reviewee_id,
+        "order_id": review.order_id,
+        "borrow_id": review.borrow_id,
+        "rating": review.rating,
+        "comment": review.comment,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    
+    await db.reviews.insert_one(review_doc)
+    
+    # Update user rating
+    reviews = await db.reviews.find({"reviewee_id": reviewee_id}, {"_id": 0}).to_list(1000)
+    avg_rating = sum(r["rating"] for r in reviews) / len(reviews)
+    await db.users.update_one(
+        {"id": reviewee_id},
+        {"$set": {"rating": round(avg_rating, 1), "total_reviews": len(reviews)}}
+    )
+    
+    return ReviewResponse(
+        id=review_id,
+        reviewer_id=current_user["id"],
+        reviewer_name=current_user["name"],
+        reviewee_id=reviewee_id,
+        rating=review.rating,
+        comment=review.comment,
+        created_at=review_doc["created_at"]
+    )
+
+@api_router.get("/reviews/{user_id}", response_model=List[ReviewResponse])
+async def get_user_reviews(user_id: str):
+    reviews = await db.reviews.find({"reviewee_id": user_id}, {"_id": 0}).sort("created_at", -1).to_list(100)
+    
+    result = []
+    for review in reviews:
+        reviewer = await db.users.find_one({"id": review["reviewer_id"]}, {"_id": 0, "name": 1})
+        result.append(ReviewResponse(
+            id=review["id"],
+            reviewer_id=review["reviewer_id"],
+            reviewer_name=reviewer["name"] if reviewer else "Unknown",
+            reviewee_id=review["reviewee_id"],
+            rating=review["rating"],
+            comment=review.get("comment"),
+            created_at=review["created_at"]
+        ))
+    
+    return result
+
+# ============== STATS/DASHBOARD ENDPOINTS ==============
+@api_router.get("/stats/dashboard")
+async def get_dashboard_stats(current_user: dict = Depends(get_current_user)):
+    # Get counts
+    items_listed = await db.items.count_documents({"owner_id": current_user["id"]})
+    items_bought = await db.orders.count_documents({"buyer_id": current_user["id"], "status": OrderStatus.COMPLETED.value})
+    items_sold = await db.orders.count_documents({"seller_id": current_user["id"], "status": OrderStatus.COMPLETED.value})
+    items_borrowed = await db.borrow_requests.count_documents({"borrower_id": current_user["id"], "status": {"$in": [BorrowStatus.ACTIVE.value, BorrowStatus.CLOSED.value]}})
+    items_lent = await db.borrow_requests.count_documents({"lender_id": current_user["id"], "status": {"$in": [BorrowStatus.ACTIVE.value, BorrowStatus.CLOSED.value]}})
+    
+    # Calculate earnings
+    sold_orders = await db.orders.find({"seller_id": current_user["id"], "status": OrderStatus.COMPLETED.value}, {"_id": 0, "amount": 1}).to_list(1000)
+    sales_earnings = sum(o["amount"] for o in sold_orders)
+    
+    lent_borrows = await db.borrow_requests.find({"lender_id": current_user["id"], "status": BorrowStatus.CLOSED.value}, {"_id": 0, "rental_amount": 1}).to_list(1000)
+    rental_earnings = sum(b["rental_amount"] for b in lent_borrows)
+    
+    return {
+        "items_listed": items_listed,
+        "items_bought": items_bought,
+        "items_sold": items_sold,
+        "items_borrowed": items_borrowed,
+        "items_lent": items_lent,
+        "sales_earnings": sales_earnings,
+        "rental_earnings": rental_earnings,
+        "total_earnings": sales_earnings + rental_earnings
+    }
+
+@api_router.get("/stats/featured-items", response_model=List[ItemResponse])
+async def get_featured_items(current_user: dict = Depends(get_current_user)):
+    items = await db.items.find(
+        {"college_id": current_user["college_id"], "status": ItemStatus.AVAILABLE.value},
+        {"_id": 0}
+    ).sort("created_at", -1).limit(8).to_list(8)
+    
+    result = []
+    for item in items:
+        owner = await db.users.find_one({"id": item["owner_id"]}, {"_id": 0, "name": 1, "rating": 1})
+        result.append(ItemResponse(
+            **item,
+            owner_name=owner["name"] if owner else "Unknown",
+            owner_rating=owner.get("rating", 0.0) if owner else 0.0
+        ))
+    
+    return result
+
+# ============== USER PROFILE (PUBLIC) ==============
+@api_router.get("/users/{user_id}", response_model=UserResponse)
+async def get_user_profile(user_id: str, current_user: dict = Depends(get_current_user)):
+    user = await db.users.find_one({"id": user_id}, {"_id": 0, "password": 0, "student_id_image": 0})
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # Check same college
+    if user["college_id"] != current_user["college_id"]:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    college = await db.colleges.find_one({"id": user["college_id"]}, {"_id": 0})
+    
+    return UserResponse(
+        id=user["id"],
+        email=user["email"],
+        name=user["name"],
+        phone=user.get("phone"),
+        college_id=user["college_id"],
+        college_name=college["name"] if college else None,
+        role=user["role"],
+        status=user["status"],
+        rating=user.get("rating", 0.0),
+        total_reviews=user.get("total_reviews", 0),
+        avatar_url=user.get("avatar_url"),
+        created_at=user["created_at"]
+    )
+
+# ============== SEED DATA ==============
+@api_router.post("/seed")
+async def seed_data():
+    """Seed initial colleges for testing"""
+    colleges = [
+        {"id": "col-1", "name": "Stanford University", "domain": "stanford.edu", "is_active": True, "created_at": datetime.now(timezone.utc).isoformat()},
+        {"id": "col-2", "name": "MIT", "domain": "mit.edu", "is_active": True, "created_at": datetime.now(timezone.utc).isoformat()},
+        {"id": "col-3", "name": "Harvard University", "domain": "harvard.edu", "is_active": True, "created_at": datetime.now(timezone.utc).isoformat()},
+        {"id": "col-4", "name": "UC Berkeley", "domain": "berkeley.edu", "is_active": True, "created_at": datetime.now(timezone.utc).isoformat()},
+        {"id": "col-5", "name": "UCLA", "domain": "ucla.edu", "is_active": True, "created_at": datetime.now(timezone.utc).isoformat()}
+    ]
+    
+    for college in colleges:
+        existing = await db.colleges.find_one({"id": college["id"]})
+        if not existing:
+            await db.colleges.insert_one(college)
+    
+    return {"message": "Seed data created", "colleges": len(colleges)}
+
+# Include router
 app.include_router(api_router)
 
+# CORS
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
@@ -77,7 +1286,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Configure logging
+# Logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
