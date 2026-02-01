@@ -1,34 +1,550 @@
-.App-logo {
-    height: 40vmin;
-    pointer-events: none;
+/* Campus Store - Component Styles */
+
+/* Header/Navbar */
+.navbar {
+  @apply fixed top-0 left-0 right-0 z-50;
+  @apply bg-white/80 backdrop-blur-md border-b border-slate-100;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-    .App-logo {
-        animation: App-logo-spin infinite 20s linear;
-    }
+.navbar-container {
+  @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;
+  @apply h-16 flex items-center justify-between;
 }
 
-.App-header {
-    background-color: #0f0f10;
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    font-size: calc(10px + 2vmin);
-    color: white;
+.nav-link {
+  @apply text-slate-600 font-medium px-4 py-2 rounded-lg;
+  transition: color 0.2s ease, background-color 0.2s ease;
 }
 
-.App-link {
-    color: #61dafb;
+.nav-link:hover {
+  @apply text-blue-600 bg-blue-50;
 }
 
-@keyframes App-logo-spin {
-    from {
-        transform: rotate(0deg);
-    }
-    to {
-        transform: rotate(360deg);
-    }
+.nav-link.active {
+  @apply text-blue-600 bg-blue-50;
+}
+
+/* Mobile Bottom Navigation */
+.mobile-nav {
+  @apply fixed bottom-0 left-0 right-0 z-50 md:hidden;
+  @apply bg-white border-t border-slate-100;
+  @apply safe-area-inset-bottom;
+}
+
+.mobile-nav-item {
+  @apply flex flex-col items-center justify-center py-2 px-3;
+  @apply text-slate-400 text-xs font-medium;
+  transition: color 0.2s ease;
+}
+
+.mobile-nav-item.active {
+  @apply text-blue-600;
+}
+
+.mobile-nav-item svg {
+  @apply w-5 h-5 mb-1;
+}
+
+/* Page Container */
+.page-container {
+  @apply min-h-screen pt-16 pb-20 md:pb-8;
+}
+
+.page-content {
+  @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6;
+}
+
+/* Hero Section */
+.hero-section {
+  @apply relative overflow-hidden;
+  background: linear-gradient(135deg, #eff6ff 0%, #eef2ff 50%, #faf5ff 100%);
+}
+
+.hero-content {
+  @apply max-w-7xl mx-auto px-4 sm:px-6 lg:px-8;
+  @apply py-16 md:py-24 lg:py-32;
+}
+
+.hero-title {
+  @apply text-4xl md:text-5xl lg:text-6xl font-extrabold text-slate-900;
+  @apply leading-tight tracking-tight;
+}
+
+.hero-subtitle {
+  @apply text-lg md:text-xl text-slate-600 mt-4 max-w-2xl;
+}
+
+/* Product Cards */
+.product-card {
+  @apply relative bg-white rounded-2xl border border-slate-100 overflow-hidden;
+  @apply group cursor-pointer;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.product-card:hover {
+  @apply shadow-lg;
+  transform: translateY(-4px);
+}
+
+.product-card-image {
+  @apply aspect-product w-full object-cover;
+  @apply bg-slate-100;
+}
+
+.product-card-body {
+  @apply p-4;
+}
+
+.product-card-title {
+  @apply font-semibold text-slate-900 line-clamp-1;
+}
+
+.product-card-price {
+  @apply text-blue-600 font-bold text-lg mt-1;
+}
+
+.product-card-meta {
+  @apply flex items-center gap-2 mt-2 text-sm text-slate-500;
+}
+
+/* Category Cards */
+.category-card {
+  @apply flex flex-col items-center justify-center p-6;
+  @apply bg-slate-50 rounded-xl cursor-pointer;
+  @apply border border-transparent;
+  transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.category-card:hover {
+  @apply bg-white border-slate-100 shadow-md;
+}
+
+.category-card.active {
+  @apply bg-blue-50 border-blue-200;
+}
+
+.category-icon {
+  @apply w-10 h-10 text-slate-600;
+}
+
+.category-card.active .category-icon {
+  @apply text-blue-600;
+}
+
+.category-name {
+  @apply mt-2 text-sm font-medium text-slate-700;
+}
+
+.category-card.active .category-name {
+  @apply text-blue-700;
+}
+
+/* Toggle Button Group */
+.toggle-group {
+  @apply inline-flex rounded-full p-1 bg-slate-100;
+}
+
+.toggle-btn {
+  @apply px-5 py-2 rounded-full text-sm font-semibold;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+.toggle-btn:not(.active) {
+  @apply text-slate-600;
+}
+
+.toggle-btn:not(.active):hover {
+  @apply text-slate-900;
+}
+
+.toggle-btn.active.buy {
+  @apply bg-blue-600 text-white;
+}
+
+.toggle-btn.active.borrow {
+  @apply bg-amber-500 text-white;
+}
+
+/* Search Bar */
+.search-container {
+  @apply relative;
+}
+
+.search-input {
+  @apply w-full h-12 pl-12 pr-4 rounded-xl;
+  @apply bg-white border border-slate-200;
+  @apply text-slate-900 placeholder:text-slate-400;
+  @apply focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent;
+}
+
+.search-icon {
+  @apply absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400;
+}
+
+/* Filter Pills */
+.filter-pills {
+  @apply flex gap-2 overflow-x-auto no-scrollbar py-2;
+}
+
+.filter-pill {
+  @apply px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap;
+  @apply bg-slate-100 text-slate-600;
+  @apply border border-transparent;
+  transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.filter-pill:hover {
+  @apply bg-slate-200;
+}
+
+.filter-pill.active {
+  @apply bg-blue-50 border-blue-200 text-blue-700;
+}
+
+/* Item Detail */
+.item-gallery {
+  @apply grid gap-4;
+}
+
+.item-main-image {
+  @apply w-full aspect-product object-cover rounded-2xl bg-slate-100;
+}
+
+.item-thumbnails {
+  @apply flex gap-2 overflow-x-auto no-scrollbar;
+}
+
+.item-thumbnail {
+  @apply w-20 h-20 rounded-lg object-cover cursor-pointer;
+  @apply border-2 border-transparent;
+  transition: border-color 0.2s ease;
+}
+
+.item-thumbnail.active {
+  @apply border-blue-500;
+}
+
+.item-info {
+  @apply space-y-6;
+}
+
+.item-title {
+  @apply text-2xl md:text-3xl font-bold text-slate-900;
+}
+
+.item-price-section {
+  @apply flex flex-wrap gap-4;
+}
+
+.price-card {
+  @apply flex-1 min-w-[140px] p-4 rounded-xl;
+}
+
+.price-card.buy {
+  @apply bg-blue-50 border border-blue-100;
+}
+
+.price-card.borrow {
+  @apply bg-amber-50 border border-amber-100;
+}
+
+.price-label {
+  @apply text-sm font-medium;
+}
+
+.price-card.buy .price-label {
+  @apply text-blue-700;
+}
+
+.price-card.borrow .price-label {
+  @apply text-amber-700;
+}
+
+.price-value {
+  @apply text-2xl font-bold mt-1;
+}
+
+.price-card.buy .price-value {
+  @apply text-blue-600;
+}
+
+.price-card.borrow .price-value {
+  @apply text-amber-600;
+}
+
+/* Owner Card */
+.owner-card {
+  @apply flex items-center gap-4 p-4 rounded-xl bg-slate-50;
+}
+
+.owner-avatar {
+  @apply w-12 h-12 rounded-full object-cover;
+}
+
+.owner-info {
+  @apply flex-1;
+}
+
+.owner-name {
+  @apply font-semibold text-slate-900;
+}
+
+.owner-rating {
+  @apply flex items-center gap-1 text-sm text-slate-500 mt-1;
+}
+
+/* Forms */
+.form-group {
+  @apply space-y-2;
+}
+
+.form-label {
+  @apply block text-sm font-medium text-slate-700;
+}
+
+.form-input {
+  @apply w-full h-11 px-4 rounded-lg;
+  @apply bg-white border border-slate-200;
+  @apply text-slate-900 placeholder:text-slate-400;
+  @apply focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent;
+}
+
+.form-textarea {
+  @apply w-full px-4 py-3 rounded-lg resize-none;
+  @apply bg-white border border-slate-200;
+  @apply text-slate-900 placeholder:text-slate-400;
+  @apply focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent;
+}
+
+.form-error {
+  @apply text-sm text-red-500 mt-1;
+}
+
+/* Auth Pages */
+.auth-container {
+  @apply min-h-screen flex items-center justify-center;
+  @apply py-12 px-4 sm:px-6 lg:px-8;
+  background: linear-gradient(135deg, #eff6ff 0%, #eef2ff 50%, #faf5ff 100%);
+}
+
+.auth-card {
+  @apply w-full max-w-md p-8 rounded-2xl;
+  @apply bg-white shadow-xl;
+}
+
+.auth-title {
+  @apply text-2xl font-bold text-slate-900 text-center;
+}
+
+.auth-subtitle {
+  @apply text-slate-500 text-center mt-2;
+}
+
+/* Profile Page */
+.profile-header {
+  @apply relative bg-gradient-to-br from-blue-500 to-indigo-600 rounded-2xl overflow-hidden;
+  @apply p-6 md:p-8 text-white;
+}
+
+.profile-avatar {
+  @apply w-24 h-24 rounded-full border-4 border-white shadow-lg object-cover;
+}
+
+.profile-name {
+  @apply text-2xl font-bold mt-4;
+}
+
+.profile-college {
+  @apply text-blue-100 mt-1;
+}
+
+.profile-stats {
+  @apply flex gap-6 mt-4;
+}
+
+.profile-stat {
+  @apply text-center;
+}
+
+.profile-stat-value {
+  @apply text-2xl font-bold;
+}
+
+.profile-stat-label {
+  @apply text-sm text-blue-100;
+}
+
+/* Orders/Activity */
+.activity-card {
+  @apply flex gap-4 p-4 rounded-xl bg-white border border-slate-100;
+  transition: box-shadow 0.2s ease;
+}
+
+.activity-card:hover {
+  @apply shadow-md;
+}
+
+.activity-image {
+  @apply w-20 h-20 rounded-lg object-cover bg-slate-100 flex-shrink-0;
+}
+
+.activity-content {
+  @apply flex-1 min-w-0;
+}
+
+.activity-title {
+  @apply font-semibold text-slate-900 truncate;
+}
+
+.activity-meta {
+  @apply text-sm text-slate-500 mt-1;
+}
+
+.activity-status {
+  @apply inline-flex items-center px-2 py-1 rounded-full text-xs font-medium mt-2;
+}
+
+.activity-status.pending {
+  @apply bg-yellow-50 text-yellow-700;
+}
+
+.activity-status.active {
+  @apply bg-blue-50 text-blue-700;
+}
+
+.activity-status.completed {
+  @apply bg-emerald-50 text-emerald-700;
+}
+
+.activity-status.cancelled {
+  @apply bg-red-50 text-red-700;
+}
+
+/* Empty State */
+.empty-state {
+  @apply flex flex-col items-center justify-center py-16 text-center;
+}
+
+.empty-state-icon {
+  @apply w-16 h-16 text-slate-300;
+}
+
+.empty-state-title {
+  @apply text-lg font-semibold text-slate-700 mt-4;
+}
+
+.empty-state-text {
+  @apply text-slate-500 mt-2 max-w-sm;
+}
+
+/* Rating Stars */
+.rating-stars {
+  @apply flex gap-0.5;
+}
+
+.star {
+  @apply w-4 h-4;
+}
+
+.star.filled {
+  @apply text-amber-400;
+}
+
+.star.empty {
+  @apply text-slate-200;
+}
+
+/* Condition Badge */
+.condition-badge {
+  @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold;
+}
+
+.condition-badge.new {
+  @apply bg-emerald-50 text-emerald-700 border border-emerald-200;
+}
+
+.condition-badge.like_new {
+  @apply bg-blue-50 text-blue-700 border border-blue-200;
+}
+
+.condition-badge.good {
+  @apply bg-slate-50 text-slate-700 border border-slate-200;
+}
+
+.condition-badge.fair {
+  @apply bg-amber-50 text-amber-700 border border-amber-200;
+}
+
+.condition-badge.poor {
+  @apply bg-red-50 text-red-700 border border-red-200;
+}
+
+/* Loading States */
+.loading-spinner {
+  @apply w-6 h-6 border-2 border-slate-200 border-t-blue-600 rounded-full animate-spin;
+}
+
+.loading-overlay {
+  @apply fixed inset-0 bg-white/80 backdrop-blur-sm z-50;
+  @apply flex items-center justify-center;
+}
+
+/* Responsive Grid */
+.product-grid {
+  @apply grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6;
+}
+
+.category-grid {
+  @apply grid grid-cols-2 md:grid-cols-4 gap-4;
+}
+
+/* Landing page specific */
+.landing-section {
+  @apply py-16 md:py-24;
+}
+
+.section-title {
+  @apply text-3xl md:text-4xl font-bold text-slate-900 text-center;
+}
+
+.section-subtitle {
+  @apply text-lg text-slate-600 text-center mt-4 max-w-2xl mx-auto;
+}
+
+/* Feature cards */
+.feature-card {
+  @apply p-6 rounded-2xl bg-white border border-slate-100;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.feature-card:hover {
+  @apply shadow-lg;
+  transform: translateY(-4px);
+}
+
+.feature-icon {
+  @apply w-12 h-12 rounded-xl flex items-center justify-center;
+  @apply bg-blue-50 text-blue-600;
+}
+
+.feature-title {
+  @apply text-lg font-semibold text-slate-900 mt-4;
+}
+
+.feature-text {
+  @apply text-slate-600 mt-2;
+}
+
+/* FAQ */
+.faq-item {
+  @apply border-b border-slate-100 last:border-0;
+}
+
+.faq-question {
+  @apply w-full flex items-center justify-between py-4 text-left;
+  @apply font-semibold text-slate-900;
+}
+
+.faq-answer {
+  @apply pb-4 text-slate-600;
 }
