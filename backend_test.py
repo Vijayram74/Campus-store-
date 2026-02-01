@@ -248,9 +248,9 @@ class CampusStoreAPITester:
             self.log_test("Create Order", False, "Failed to create buyer account")
             return False
 
-        buyer_token = response['token']
+        self.buyer_token = response['token']  # Store buyer token for payment test
         original_token = self.token
-        self.token = buyer_token
+        self.token = self.buyer_token
 
         # Try to create order
         order_data = {"item_id": self.item_id}
