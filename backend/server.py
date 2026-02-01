@@ -345,6 +345,13 @@ async def signup(user: UserCreate):
     
     token = create_token(user_id, user.college_id, UserRole.STUDENT.value)
     
+    # Send welcome email (async, non-blocking)
+    asyncio.create_task(send_email_async(
+        user.email,
+        "Welcome to Campus Store!",
+        get_welcome_email_html(user.name, college["name"])
+    ))
+    
     return {
         "token": token,
         "user": {
