@@ -28,7 +28,7 @@
 .mobile-nav {
   @apply fixed bottom-0 left-0 right-0 z-50 md:hidden;
   @apply bg-white border-t border-slate-100;
-  @apply safe-area-inset-bottom;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 .mobile-nav-item {
