@@ -1,0 +1,194 @@
+{
+  "identity": {
+    "persona": "E1: The Anti-AI Designer",
+    "mission": "Create a trustworthy, energetic, and community-focused campus marketplace that breaks the generic 'SaaS' mold.",
+    "principles": [
+      "Fusion over Imitation: Mix 'University Tradition' with 'Gen Z Vibrancy'.",
+      "Emotion First: Safety, Community, and Smart Savings.",
+      "Content is King: Product images and student faces drive the narrative.",
+      "Zoom In: Focus on item details and trust indicators (ratings, verified badges).",
+      "Negative Space: Use generous padding to create a 'clean' feel, avoiding clutter."
+    ]
+  },
+  "theme": {
+    "mode": "light",
+    "strategy": "Clean Campus Aesthetic",
+    "description": "A bright, airy interface that feels like a modern university campus—open, safe, and energetic. Avoids dark mode gloom; prioritizes clarity and trust."
+  },
+  "typography": {
+    "headings": {
+      "family": "Manrope, sans-serif",
+      "weights": ["600", "700", "800"],
+      "usage": "All section titles, hero text, and major calls to action. Use tight tracking (-0.02em) for a modern feel.",
+      "sizes": {
+        "h1": "text-4xl md:text-6xl lg:text-7xl",
+        "h2": "text-3xl md:text-5xl",
+        "h3": "text-2xl md:text-3xl"
+      }
+    },
+    "body": {
+      "family": "Inter, sans-serif",
+      "weights": ["400", "500"],
+      "usage": "Paragraphs, UI labels, form inputs. Optimized for legibility at small sizes.",
+      "sizes": {
+        "base": "text-base leading-relaxed",
+        "small": "text-sm leading-normal",
+        "tiny": "text-xs tracking-wide uppercase"
+      }
+    }
+  },
+  "colors": {
+    "palette": {
+      "primary": {
+        "name": "Electric Campus Blue",
+        "hex": "#3B82F6",
+        "tailwind": "bg-blue-500",
+        "usage": "Primary buttons, active states, key brand elements."
+      },
+      "secondary": {
+        "name": "Sunny Borrow Yellow",
+        "hex": "#FBBF24",
+        "tailwind": "bg-amber-400",
+        "usage": "Highlights, 'Rent/Borrow' actions, notifications."
+      },
+      "accent": {
+        "name": "Safe Mint",
+        "hex": "#10B981",
+        "tailwind": "bg-emerald-500",
+        "usage": "Success states, 'Verified Student' badges, 'Available' status."
+      },
+      "background": {
+        "main": "#FFFFFF",
+        "secondary": "#F8FAFC",
+        "tailwind_main": "bg-white",
+        "tailwind_secondary": "bg-slate-50"
+      },
+      "text": {
+        "primary": "#0F172A",
+        "secondary": "#64748B",
+        "tailwind_primary": "text-slate-900",
+        "tailwind_secondary": "text-slate-500"
+      },
+      "border": {
+        "light": "#E2E8F0",
+        "focus": "#3B82F6",
+        "tailwind": "border-slate-200"
+      }
+    },
+    "gradients": {
+      "hero": "bg-gradient-to-br from-blue-50 to-indigo-50",
+      "card_hover": "hover:bg-gradient-to-b hover:from-white hover:to-slate-50"
+    }
+  },
+  "visual_enhancers": {
+    "shadows": {
+      "card": "shadow-[0_2px_8px_rgba(0,0,0,0.04)]",
+      "card_hover": "shadow-[0_12px_24px_rgba(0,0,0,0.08)]",
+      "dropdown": "shadow-[0_4px_20px_rgba(0,0,0,0.08)]"
+    },
+    "borders": {
+      "default": "border border-slate-200",
+      "subtle": "border-b border-slate-100",
+      "radius": "rounded-xl md:rounded-2xl"
+    },
+    "glassmorphism": {
+      "nav": "bg-white/80 backdrop-blur-md border-b border-white/20",
+      "overlay": "bg-slate-900/20 backdrop-blur-sm"
+    },
+    "textures": {
+      "noise": "Use a subtle noise overlay (opacity 0.02) on the main background to reduce digital sterility."
+    }
+  },
+  "components": {
+    "buttons": {
+      "primary": "bg-blue-600 text-white hover:bg-blue-700 shadow-sm hover:shadow-md transition-all duration-200 rounded-full px-6 py-2.5 font-semibold",
+      "secondary": "bg-white text-slate-700 border border-slate-200 hover:bg-slate-50 hover:border-slate-300 transition-all duration-200 rounded-full px-6 py-2.5 font-medium",
+      "ghost": "text-slate-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg px-4 py-2 transition-colors"
+    },
+    "cards": {
+      "product": "group relative bg-white rounded-2xl border border-slate-100 overflow-hidden hover:shadow-lg transition-all duration-300",
+      "category": "flex flex-col items-center justify-center p-6 bg-slate-50 hover:bg-white hover:shadow-md border border-transparent hover:border-slate-100 rounded-xl transition-all cursor-pointer"
+    },
+    "inputs": {
+      "default": "h-11 rounded-lg border-slate-200 bg-white px-3 py-2 text-sm ring-offset-white file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-slate-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+    },
+    "badges": {
+      "verified": "inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700",
+      "borrow": "inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-xs font-semibold text-amber-700",
+      "buy": "inline-flex items-center rounded-full border border-blue-200 bg-blue-50 px-2.5 py-0.5 text-xs font-semibold text-blue-700"
+    }
+  },
+  "grids": {
+    "landing_hero": "grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-12 items-center",
+    "product_grid": "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6",
+    "bento_categories": "grid grid-cols-2 md:grid-cols-4 gap-4"
+  },
+  "motion": {
+    "transitions": "transition-all duration-300 ease-out",
+    "hover_lift": "hover:-translate-y-1",
+    "page_enter": "animate-in fade-in slide-in-from-bottom-4 duration-500",
+    "stagger": "stagger-children-100"
+  },
+  "accessibility": {
+    "contrast": "Ensure all text meets WCAG AA (4.5:1). Use Slate-900 for main text, Slate-500 for secondary.",
+    "focus": "Visible focus rings on all interactive elements (ring-2 ring-blue-500).",
+    "labels": "All icon-only buttons must have aria-labels."
+  },
+  "media": {
+    "image_style": "Natural, candid, high-quality. Avoid staged stock photos. Use rounded corners (rounded-xl).",
+    "aspect_ratios": {
+      "product": "aspect-[4/3] object-cover",
+      "hero": "aspect-[16/9] or aspect-[4/5] on mobile",
+      "avatar": "aspect-square rounded-full object-cover"
+    }
+  },
+  "image_urls": {
+    "hero": {
+      "main": "https://images.unsplash.com/photo-1758270705482-cee87ea98738?crop=entropy&cs=srgb&fm=jpg&q=85",
+      "alt": "Students talking and relaxing on campus"
+    },
+    "campus": {
+      "building_modern": "https://images.unsplash.com/photo-1769284000746-6cbcc55c259f?crop=entropy&cs=srgb&fm=jpg&q=85",
+      "building_glass": "https://images.unsplash.com/photo-1754573061125-b43b1637b541?crop=entropy&cs=srgb&fm=jpg&q=85",
+      "student_bike": "https://images.unsplash.com/photo-1741676516502-69250deb38ca?crop=entropy&cs=srgb&fm=jpg&q=85"
+    },
+    "products": {
+      "textbooks": "https://images.unsplash.com/photo-1731983568664-9c1d8a87e7a2?crop=entropy&cs=srgb&fm=jpg&q=85",
+      "laptop": "https://images.unsplash.com/photo-1650094983020-89c3dfa9ce0d?crop=entropy&cs=srgb&fm=jpg&q=85",
+      "chair": "https://images.unsplash.com/photo-1767800766055-1cdbd2e351b9?crop=entropy&cs=srgb&fm=jpg&q=85"
+    },
+    "placeholders": {
+      "avatar": "https://api.dicebear.com/7.x/avataaars/svg?seed=Felix"
+    }
+  },
+  "instructions_to_main_agent": [
+    "1. IMPLEMENTATION ORDER: Setup Tailwind config -> Create UI Components (Shadcn) -> Build Layouts -> Assemble Pages.",
+    "2. SHADCN CUSTOMIZATION: Do not use default Shadcn styles blindly. Override borders to 'slate-200', radius to 'rounded-xl', and focus rings to 'blue-500'.",
+    "3. MOBILE FIRST: Design for mobile (375px) first. Ensure touch targets are 44px+. Use 'hidden md:block' for complex desktop-only elements.",
+    "4. DATA-TESTID: Add 'data-testid' to EVERY interactive element (buttons, inputs, links). Format: 'section-element-action' (e.g., 'login-form-submit-btn').",
+    "5. IMAGES: Use the provided image_urls. DO NOT use placeholders like 'via.placeholder.com'.",
+    "6. EMPTY STATES: Create delightful empty states (e.g., 'No items found') using the 'student_bike' or 'campus' images with a friendly message.",
+    "7. NAVIGATION: Use a sticky bottom nav for mobile and a top sticky header for desktop.",
+    "8. FORMS: Split long forms (Sign Up, List Item) into steps or use clear grouping with 'fieldset' and 'legend'."
+  ],
+  "UNIVERSAL_GUIDELINES_FOR_MAIN_AGENT": [
+    "Dark colors look good when used independently without gradients. DO NOT use dark colors as gradients.",
+    "Don't make generic centered layouts, simplistic gradients, and uniform styling.",
+    "Create depth through layered design elements with z-index hierarchy.",
+    "Use glass-morphism effects with backdrop filters (12-24px blur).",
+    "You MUST NOT apply universal transition. Eg: 'transition: all'. This results in breaking transforms. Always add transitions for specific interactive elements like button, input excluding transforms.",
+    "You MUST NOT center align the app container, ie do not add '.App { text-align: center; }' in the css file. This disrupts the human natural reading flow of text.",
+    "Always use modern button styles like pill-shaped, or sharp button with interaction animations & color relevant to the app style.",
+    "NEVER: use AI assistant Emoji characters like 🤖🧠💭💡🔮🎯📚🎭🎬🎪🎉🎊🎁🎀🎂🍰🎈🎨🎰💰💵💳🏦💎🪙💸🤑📊📈📉💹🔢🏆🥇 etc for icons.",
+    "Every interaction needs micro-animations - hover states, transitions, parallax effects, and entrance animations. Static = dead.",
+    "Use 2-3x more spacing than feels comfortable. Cramped designs look cheap.",
+    "Subtle grain textures, noise overlays, custom cursors, selection states, and loading animations: separates good from extraordinary.",
+    "Main agent relies on these image URLs. Missing categories (especially sponsor logos) = main agent will use placeholder text which is FORBIDDEN.",
+    "Prioritize using pre-existing components from src/components/ui when applicable.",
+    "Create new components that match the style and conventions of existing components when needed.",
+    "Examine existing components to understand the project's component patterns before creating new ones.",
+    "Components MUST use named exports (export const ComponentName = ...).",
+    "Pages MUST use default exports (export default function PageName() {...}).",
+    "Use 'sonner' for toasts. Sonner component are located in '/app/src/components/ui/sonner.tsx'."
+  ]
+}
