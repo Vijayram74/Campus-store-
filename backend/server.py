@@ -1287,6 +1287,384 @@ async def seed_data():
     
     return {"message": "Seed data created", "colleges": len(colleges)}
 
+# ============== IMAGE UPLOAD ==============
+@api_router.post("/upload")
+async def upload_image(file: UploadFile = File(...), current_user: dict = Depends(get_current_user)):
+    """Upload an image and return its URL"""
+    if not file.content_type.startswith('image/'):
+        raise HTTPException(status_code=400, detail="File must be an image")
+    
+    # Check file size (max 5MB)
+    contents = await file.read()
+    if len(contents) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File too large (max 5MB)")
+    
+    # Generate unique filename
+    ext = file.filename.split('.')[-1] if '.' in file.filename else 'jpg'
+    filename = f"{uuid.uuid4()}.{ext}"
+    filepath = UPLOADS_DIR / filename
+    
+    # Save file
+    with open(filepath, 'wb') as f:
+        f.write(contents)
+    
+    # Return URL
+    return {"url": f"/api/uploads/{filename}", "filename": filename}
+
+@api_router.post("/upload/base64")
+async def upload_base64_image(data: dict, current_user: dict = Depends(get_current_user)):
+    """Upload an image as base64 and return its URL"""
+    base64_data = data.get("image")
+    if not base64_data:
+        raise HTTPException(status_code=400, detail="No image data provided")
+    
+    # Remove data URL prefix if present
+    if ',' in base64_data:
+        base64_data = base64_data.split(',')[1]
+    
+    try:
+        contents = base64.b64decode(base64_data)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid base64 data")
+    
+    # Check file size (max 5MB)
+    if len(contents) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File too large (max 5MB)")
+    
+    # Generate unique filename
+    filename = f"{uuid.uuid4()}.jpg"
+    filepath = UPLOADS_DIR / filename
+    
+    # Save file
+    with open(filepath, 'wb') as f:
+        f.write(contents)
+    
+    return {"url": f"/api/uploads/{filename}", "filename": filename}
+
+# ============== EMAIL NOTIFICATIONS ==============
+async def send_email_async(to_email: str, subject: str, html_content: str):
+    """Send email asynchronously using Resend"""
+    if not RESEND_API_KEY:
+        logger.info(f"[EMAIL MOCK] To: {to_email}, Subject: {subject}")
+        return {"id": "mock", "status": "mocked"}
+    
+    try:
+        params = {
+            "from": SENDER_EMAIL,
+            "to": [to_email],
+            "subject": subject,
+            "html": html_content
+        }
+        result = await asyncio.to_thread(resend.Emails.send, params)
+        logger.info(f"Email sent to {to_email}: {result}")
+        return result
+    except Exception as e:
+        logger.error(f"Failed to send email to {to_email}: {e}")
+        return {"error": str(e)}
+
+def get_welcome_email_html(name: str, college_name: str):
+    return f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background: linear-gradient(135deg, #3b82f6 0%, #4f46e5 100%); padding: 40px; text-align: center;">
+            <h1 style="color: white; margin: 0;">Welcome to Campus Store!</h1>
+        </div>
+        <div style="padding: 30px; background: #f8fafc;">
+            <p style="font-size: 16px; color: #334155;">Hi {name},</p>
+            <p style="font-size: 16px; color: #334155;">
+                Welcome to Campus Store at <strong>{college_name}</strong>! You're now part of your campus marketplace community.
+            </p>
+            <p style="font-size: 16px; color: #334155;">You can now:</p>
+            <ul style="color: #334155;">
+                <li>Buy and sell items with fellow students</li>
+                <li>Borrow items you need temporarily</li>
+                <li>List your items for rent and earn money</li>
+            </ul>
+            <div style="text-align: center; margin: 30px 0;">
+                <a href="#" style="background: #3b82f6; color: white; padding: 12px 30px; text-decoration: none; border-radius: 25px; font-weight: bold;">
+                    Start Browsing
+                </a>
+            </div>
+            <p style="font-size: 14px; color: #64748b;">Happy trading!</p>
+        </div>
+    </div>
+    """
+
+def get_borrow_request_email_html(lender_name: str, borrower_name: str, item_title: str, days: int, total_amount: float):
+    return f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background: #f59e0b; padding: 30px; text-align: center;">
+            <h1 style="color: white; margin: 0;">New Borrow Request!</h1>
+        </div>
+        <div style="padding: 30px; background: #f8fafc;">
+            <p style="font-size: 16px; color: #334155;">Hi {lender_name},</p>
+            <p style="font-size: 16px; color: #334155;">
+                <strong>{borrower_name}</strong> wants to borrow your item:
+            </p>
+            <div style="background: white; border: 1px solid #e2e8f0; border-radius: 10px; padding: 20px; margin: 20px 0;">
+                <h3 style="margin: 0 0 10px 0; color: #0f172a;">{item_title}</h3>
+                <p style="margin: 5px 0; color: #64748b;">Duration: {days} days</p>
+                <p style="margin: 5px 0; color: #f59e0b; font-weight: bold;">Total: ${total_amount:.2f}</p>
+            </div>
+            <div style="text-align: center; margin: 30px 0;">
+                <a href="#" style="background: #f59e0b; color: white; padding: 12px 30px; text-decoration: none; border-radius: 25px; font-weight: bold;">
+                    Review Request
+                </a>
+            </div>
+        </div>
+    </div>
+    """
+
+def get_borrow_approved_email_html(borrower_name: str, item_title: str, lender_name: str, total_amount: float):
+    return f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background: #10b981; padding: 30px; text-align: center;">
+            <h1 style="color: white; margin: 0;">Request Approved!</h1>
+        </div>
+        <div style="padding: 30px; background: #f8fafc;">
+            <p style="font-size: 16px; color: #334155;">Hi {borrower_name},</p>
+            <p style="font-size: 16px; color: #334155;">
+                Great news! <strong>{lender_name}</strong> approved your request to borrow:
+            </p>
+            <div style="background: white; border: 1px solid #e2e8f0; border-radius: 10px; padding: 20px; margin: 20px 0;">
+                <h3 style="margin: 0 0 10px 0; color: #0f172a;">{item_title}</h3>
+                <p style="margin: 5px 0; color: #10b981; font-weight: bold;">Total to pay: ${total_amount:.2f}</p>
+            </div>
+            <div style="text-align: center; margin: 30px 0;">
+                <a href="#" style="background: #10b981; color: white; padding: 12px 30px; text-decoration: none; border-radius: 25px; font-weight: bold;">
+                    Complete Payment
+                </a>
+            </div>
+        </div>
+    </div>
+    """
+
+def get_payment_success_email_html(user_name: str, item_title: str, amount: float, transaction_type: str):
+    return f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <div style="background: #3b82f6; padding: 30px; text-align: center;">
+            <h1 style="color: white; margin: 0;">Payment Successful!</h1>
+        </div>
+        <div style="padding: 30px; background: #f8fafc;">
+            <p style="font-size: 16px; color: #334155;">Hi {user_name},</p>
+            <p style="font-size: 16px; color: #334155;">
+                Your payment has been processed successfully.
+            </p>
+            <div style="background: white; border: 1px solid #e2e8f0; border-radius: 10px; padding: 20px; margin: 20px 0;">
+                <h3 style="margin: 0 0 10px 0; color: #0f172a;">{item_title}</h3>
+                <p style="margin: 5px 0; color: #64748b;">Type: {transaction_type}</p>
+                <p style="margin: 5px 0; color: #3b82f6; font-weight: bold;">Amount: ${amount:.2f}</p>
+            </div>
+            <p style="font-size: 14px; color: #64748b;">
+                {'Coordinate with the seller to pick up your item.' if transaction_type == 'Purchase' else 'Coordinate with the lender to pick up your rental.'}
+            </p>
+        </div>
+    </div>
+    """
+
+# ============== CHAT/MESSAGING ==============
+class MessageCreate(BaseModel):
+    receiver_id: str
+    item_id: Optional[str] = None
+    content: str
+
+class MessageResponse(BaseModel):
+    id: str
+    conversation_id: str
+    sender_id: str
+    sender_name: str
+    sender_avatar: Optional[str] = None
+    receiver_id: str
+    receiver_name: str
+    item_id: Optional[str] = None
+    item_title: Optional[str] = None
+    content: str
+    read: bool = False
+    created_at: str
+
+class ConversationResponse(BaseModel):
+    id: str
+    participant_ids: List[str]
+    participant_names: Dict[str, str]
+    participant_avatars: Dict[str, str]
+    item_id: Optional[str] = None
+    item_title: Optional[str] = None
+    last_message: Optional[str] = None
+    last_message_at: Optional[str] = None
+    unread_count: int = 0
+
+@api_router.post("/messages", response_model=MessageResponse)
+async def send_message(message: MessageCreate, current_user: dict = Depends(get_current_user)):
+    """Send a message to another user"""
+    # Check receiver exists and is in same college
+    receiver = await db.users.find_one({"id": message.receiver_id}, {"_id": 0})
+    if not receiver:
+        raise HTTPException(status_code=404, detail="Receiver not found")
+    if receiver["college_id"] != current_user["college_id"]:
+        raise HTTPException(status_code=403, detail="Can only message users from same college")
+    if message.receiver_id == current_user["id"]:
+        raise HTTPException(status_code=400, detail="Cannot message yourself")
+    
+    # Get or create conversation
+    participant_ids = sorted([current_user["id"], message.receiver_id])
+    conversation_query = {"participant_ids": participant_ids}
+    if message.item_id:
+        conversation_query["item_id"] = message.item_id
+    
+    conversation = await db.conversations.find_one(conversation_query, {"_id": 0})
+    
+    if not conversation:
+        # Create new conversation
+        item = None
+        if message.item_id:
+            item = await db.items.find_one({"id": message.item_id}, {"_id": 0, "title": 1})
+        
+        conversation = {
+            "id": str(uuid.uuid4()),
+            "participant_ids": participant_ids,
+            "participant_names": {
+                current_user["id"]: current_user["name"],
+                message.receiver_id: receiver["name"]
+            },
+            "participant_avatars": {
+                current_user["id"]: current_user.get("avatar_url", ""),
+                message.receiver_id: receiver.get("avatar_url", "")
+            },
+            "item_id": message.item_id,
+            "item_title": item["title"] if item else None,
+            "college_id": current_user["college_id"],
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+        await db.conversations.insert_one(conversation)
+    
+    # Create message
+    message_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc).isoformat()
+    
+    message_doc = {
+        "id": message_id,
+        "conversation_id": conversation["id"],
+        "sender_id": current_user["id"],
+        "receiver_id": message.receiver_id,
+        "item_id": message.item_id,
+        "content": message.content,
+        "read": False,
+        "created_at": now
+    }
+    await db.messages.insert_one(message_doc)
+    
+    # Update conversation with last message
+    await db.conversations.update_one(
+        {"id": conversation["id"]},
+        {"$set": {
+            "last_message": message.content[:100],
+            "last_message_at": now
+        }}
+    )
+    
+    item = None
+    if message.item_id:
+        item = await db.items.find_one({"id": message.item_id}, {"_id": 0, "title": 1})
+    
+    return MessageResponse(
+        id=message_id,
+        conversation_id=conversation["id"],
+        sender_id=current_user["id"],
+        sender_name=current_user["name"],
+        sender_avatar=current_user.get("avatar_url"),
+        receiver_id=message.receiver_id,
+        receiver_name=receiver["name"],
+        item_id=message.item_id,
+        item_title=item["title"] if item else None,
+        content=message.content,
+        read=False,
+        created_at=now
+    )
+
+@api_router.get("/conversations", response_model=List[ConversationResponse])
+async def get_conversations(current_user: dict = Depends(get_current_user)):
+    """Get all conversations for current user"""
+    conversations = await db.conversations.find(
+        {"participant_ids": current_user["id"]},
+        {"_id": 0}
+    ).sort("last_message_at", -1).to_list(50)
+    
+    result = []
+    for conv in conversations:
+        # Count unread messages
+        unread_count = await db.messages.count_documents({
+            "conversation_id": conv["id"],
+            "receiver_id": current_user["id"],
+            "read": False
+        })
+        
+        result.append(ConversationResponse(
+            id=conv["id"],
+            participant_ids=conv["participant_ids"],
+            participant_names=conv.get("participant_names", {}),
+            participant_avatars=conv.get("participant_avatars", {}),
+            item_id=conv.get("item_id"),
+            item_title=conv.get("item_title"),
+            last_message=conv.get("last_message"),
+            last_message_at=conv.get("last_message_at"),
+            unread_count=unread_count
+        ))
+    
+    return result
+
+@api_router.get("/conversations/{conversation_id}/messages", response_model=List[MessageResponse])
+async def get_conversation_messages(conversation_id: str, current_user: dict = Depends(get_current_user)):
+    """Get all messages in a conversation"""
+    conversation = await db.conversations.find_one({"id": conversation_id}, {"_id": 0})
+    if not conversation:
+        raise HTTPException(status_code=404, detail="Conversation not found")
+    if current_user["id"] not in conversation["participant_ids"]:
+        raise HTTPException(status_code=403, detail="Access denied")
+    
+    # Mark messages as read
+    await db.messages.update_many(
+        {"conversation_id": conversation_id, "receiver_id": current_user["id"]},
+        {"$set": {"read": True}}
+    )
+    
+    messages = await db.messages.find(
+        {"conversation_id": conversation_id},
+        {"_id": 0}
+    ).sort("created_at", 1).to_list(200)
+    
+    result = []
+    for msg in messages:
+        sender = await db.users.find_one({"id": msg["sender_id"]}, {"_id": 0, "name": 1, "avatar_url": 1})
+        receiver = await db.users.find_one({"id": msg["receiver_id"]}, {"_id": 0, "name": 1})
+        item = None
+        if msg.get("item_id"):
+            item = await db.items.find_one({"id": msg["item_id"]}, {"_id": 0, "title": 1})
+        
+        result.append(MessageResponse(
+            id=msg["id"],
+            conversation_id=msg["conversation_id"],
+            sender_id=msg["sender_id"],
+            sender_name=sender["name"] if sender else "Unknown",
+            sender_avatar=sender.get("avatar_url") if sender else None,
+            receiver_id=msg["receiver_id"],
+            receiver_name=receiver["name"] if receiver else "Unknown",
+            item_id=msg.get("item_id"),
+            item_title=item["title"] if item else None,
+            content=msg["content"],
+            read=msg.get("read", False),
+            created_at=msg["created_at"]
+        ))
+    
+    return result
+
+@api_router.get("/messages/unread-count")
+async def get_unread_count(current_user: dict = Depends(get_current_user)):
+    """Get total unread message count"""
+    count = await db.messages.count_documents({
+        "receiver_id": current_user["id"],
+        "read": False
+    })
+    return {"unread_count": count}
+
 # Include router
 app.include_router(api_router)
 
