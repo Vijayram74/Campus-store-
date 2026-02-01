@@ -317,9 +317,13 @@ class CampusStoreAPITester:
 
     def test_payment_checkout(self):
         """Test payment checkout creation"""
-        if not self.token or not hasattr(self, 'order_id'):
-            self.log_test("Payment Checkout", False, "No auth token or order_id")
+        if not hasattr(self, 'order_id') or not hasattr(self, 'buyer_token'):
+            self.log_test("Payment Checkout", False, "No order_id or buyer_token")
             return False
+
+        # Use buyer token for payment
+        original_token = self.token
+        self.token = self.buyer_token
 
         payment_data = {
             "order_id": self.order_id,
@@ -327,6 +331,10 @@ class CampusStoreAPITester:
         }
 
         success, response = self.make_request('POST', 'payments/checkout', payment_data)
+        
+        # Restore original token
+        self.token = original_token
+
         if success and 'checkout_url' in response:
             self.log_test("Payment Checkout", True, "Checkout session created successfully")
             return True
