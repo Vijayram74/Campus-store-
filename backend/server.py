@@ -871,11 +871,29 @@ async def approve_borrow_request(borrow_id: str, approval: BorrowApproval, curre
     if borrow["status"] != BorrowStatus.REQUESTED.value:
         raise HTTPException(status_code=400, detail="Request already processed")
     
+    # Get borrower and item info for email
+    borrower = await db.users.find_one({"id": borrow["borrower_id"]}, {"_id": 0, "name": 1, "email": 1})
+    item = await db.items.find_one({"id": borrow["item_id"]}, {"_id": 0, "title": 1})
+    
     if approval.approved:
         await db.borrow_requests.update_one(
             {"id": borrow_id},
             {"$set": {"status": BorrowStatus.APPROVED.value}}
         )
+        
+        # Send approval email to borrower
+        if borrower and borrower.get("email"):
+            asyncio.create_task(send_email_async(
+                borrower["email"],
+                f"Your Borrow Request Approved - {item['title'] if item else 'Item'}",
+                get_borrow_approved_email_html(
+                    borrower["name"],
+                    item["title"] if item else "Item",
+                    current_user["name"],
+                    borrow["total_amount"]
+                )
+            ))
+        
         return {"message": "Request approved"}
     else:
         await db.borrow_requests.update_one(
