@@ -768,7 +768,21 @@ async def create_borrow_request(request: BorrowRequestCreate, current_user: dict
     
     await db.borrow_requests.insert_one(borrow_doc)
     
-    lender = await db.users.find_one({"id": item["owner_id"]}, {"_id": 0, "name": 1})
+    lender = await db.users.find_one({"id": item["owner_id"]}, {"_id": 0, "name": 1, "email": 1})
+    
+    # Send email notification to lender
+    if lender and lender.get("email"):
+        asyncio.create_task(send_email_async(
+            lender["email"],
+            f"New Borrow Request for {item['title']}",
+            get_borrow_request_email_html(
+                lender["name"],
+                current_user["name"],
+                item["title"],
+                days,
+                rental_amount + deposit_amount
+            )
+        ))
     
     return BorrowRequestResponse(
         **borrow_doc,
