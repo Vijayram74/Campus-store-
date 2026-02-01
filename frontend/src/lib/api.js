@@ -98,4 +98,24 @@ export const userAPI = {
   getProfile: (id) => api.get(`/users/${id}`),
 };
 
+// Upload
+export const uploadAPI = {
+  uploadFile: (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return api.post('/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' }
+    });
+  },
+  uploadBase64: (imageData) => api.post('/upload/base64', { image: imageData }),
+};
+
+// Chat/Messages
+export const chatAPI = {
+  getConversations: () => api.get('/conversations'),
+  getMessages: (conversationId) => api.get(`/conversations/${conversationId}/messages`),
+  sendMessage: (data) => api.post('/messages', data),
+  getUnreadCount: () => api.get('/messages/unread-count'),
+};
+
 export default api;
